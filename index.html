@@ -8,7 +8,11 @@
     body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; }
     textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { padding: .4rem .8rem; font: inherit; }
-    pre { white-space: pre-wrap; }
+    #status { margin-top: 1rem; }
+    #draft { white-space: pre-wrap; margin: .5rem 0 0; padding: .75rem; background: #f4f4f4; min-height: 3rem; }
+    #draft:empty { display: none; }
+    .manual { color: #8a4b00; }
+    .error { color: #a40000; }
   </style>
 </head>
 <body>
@@ -18,18 +22,63 @@
     <textarea id="message" rows="4"></textarea>
     <button type="submit">Разобрать заявку</button>
   </form>
-  <pre id="result" aria-live="polite"></pre>
+  <div id="status" aria-live="polite"></div>
+  <div id="topic"></div>
+  <pre id="draft"></pre>
   <script type="module">
     const form = document.querySelector("form");
-    const result = document.querySelector("#result");
+    const statusEl = document.querySelector("#status");
+    const topicEl = document.querySelector("#topic");
+    const draftEl = document.querySelector("#draft");
+
+    const topicLabels = {
+      delivery: "Доставка",
+      pricing: "Цены",
+      other: "Другое",
+    };
+
+    function clearDraft() {
+      topicEl.textContent = "";
+      draftEl.textContent = "";
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      statusEl.className = "";
+      statusEl.textContent = "Разбираем…";
+
       const reply = await fetch("/api/triage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: document.querySelector("#message").value }),
       });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      const data = await reply.json();
+
+      if (data.status === "ready") {
+        statusEl.textContent = "Черновик готов. Проверьте и отправьте сами.";
+        topicEl.textContent = "Тема: " + (topicLabels[data.topic] || data.topic);
+        draftEl.textContent = data.draft;
+        return;
+      }
+
+      if (data.status === "manual_review") {
+        clearDraft();
+        statusEl.className = "manual";
+        statusEl.textContent =
+          "Авторазбор не удался. Разберите заявку вручную — предыдущий черновик очищен.";
+        return;
+      }
+
+      if (data.status === "invalid_input") {
+        clearDraft();
+        statusEl.className = "error";
+        statusEl.textContent = "Введите непустой текст заявки.";
+        return;
+      }
+
+      clearDraft();
+      statusEl.className = "error";
+      statusEl.textContent = "Что-то пошло не так. Попробуйте ещё раз или разберите вручную.";
     });
   </script>
 </body>
